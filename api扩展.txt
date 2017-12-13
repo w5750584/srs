@@ -1,0 +1,95 @@
+
+src/app/srs_app_statistic.hpp 226行
+virtual int dumps_streams_name(std::stringstream& ss, std::string name);
+
+
+src/app/srs_app_http_api.cpp 修改下面的函数
+
+
+int SrsGoApiStreams::serve_http(ISrsHttpResponseWriter* w, ISrsHttpMessage* r)
+{
+    int ret = ERROR_SUCCESS;
+
+    SrsStatistic* stat = SrsStatistic::instance();
+    std::stringstream ss;
+
+    int sid = r->parse_rest_id(entry->pattern);
+        std::string url = r->url();
+        int spos = url.find("?name=");
+        std::string sname = "";
+        if(spos > -1){
+                sname = url.substr(spos+6);
+        }
+    SrsStatisticStream* stream = NULL;
+    if (sid >= 0 && (stream = stat->find_stream(sid)) == NULL) {
+        ret = ERROR_RTMP_STREAM_NOT_FOUND;
+        srs_error("stream stream_id=%d not found. ret=%d", sid, ret);
+        return srs_api_response_code(w, r, ret);
+    }
+
+    if (r->is_http_get()) {
+        std::stringstream data;
+
+        if (!stream) {
+         
+            ret = stat->dumps_streams_name(data, sname);
+
+            ss << SRS_JOBJECT_START
+                    << SRS_JFIELD_ERROR(ret) << SRS_JFIELD_CONT
+                    << SRS_JFIELD_ORG("server", stat->server_id()) << SRS_JFIELD_CONT
+                    << SRS_JFIELD_ORG("streams", data.str())
+                << SRS_JOBJECT_END;
+        } else {
+            ret = stream->dumps(data);
+
+            ss << SRS_JOBJECT_START
+                    << SRS_JFIELD_ERROR(ret) << SRS_JFIELD_CONT
+                    << SRS_JFIELD_ORG("server", stat->server_id()) << SRS_JFIELD_CONT
+                    << SRS_JFIELD_ORG("stream", data.str())
+                << SRS_JOBJECT_END;
+        }
+
+        return srs_api_response(w, r, ss.str());
+    }
+
+    return ret;
+}
+
+
+
+src/app/srs_app_statistic.cpp 添加下面的函数
+
+
+
+
+int SrsStatistic::dumps_streams_name(stringstream& ss, std::string name)
+{
+    int ret = ERROR_SUCCESS;
+    
+    ss << SRS_JARRAY_START;
+    std::map<int64_t, SrsStatisticStream*>::iterator it;
+    for (it = streams.begin(); it != streams.end(); it++) {
+        SrsStatisticStream* stream = it->second;
+
+        if (name != "") {
+            
+			if (stream->stream != name) {
+						continue;
+			}
+
+        }else{
+
+			if (it != streams.begin()) {
+            	ss << SRS_JFIELD_CONT;
+        	}
+        }
+
+        if ((ret = stream->dumps(ss)) != ERROR_SUCCESS) {
+            return ret;
+        }
+    }
+    ss << SRS_JARRAY_END;
+    
+    return ret;
+}
+
